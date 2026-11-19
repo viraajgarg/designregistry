@@ -306,13 +306,13 @@ export default function Home() {
         if (!searchImage) throw new Error("Choose an image before searching.");
         const formData = new FormData();
         formData.append("image", searchImage);
-        data = await apiRequest<SearchHit[]>("/search/image?limit=20", {
+        data = await apiRequest<SearchHit[]>("/search/image?limit=100", {
           method: "POST",
           body: formData,
         });
       } else if (mode === "semantic") {
         if (!query.trim()) throw new Error("Enter a description to search.");
-        data = await apiRequest<SearchHit[]>("/search/text?limit=20", {
+        data = await apiRequest<SearchHit[]>("/search/text?limit=100", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: query.trim() }),
@@ -320,7 +320,7 @@ export default function Home() {
       } else {
         if (!query.trim()) throw new Error("Enter a design number or keyword.");
         data = await apiRequest<{ items: Design[] }>(
-          `/designs/search?q=${encodeURIComponent(query.trim())}&page=1&page_size=20`,
+          `/designs/search?q=${encodeURIComponent(query.trim())}&page=1&page_size=100`,
         );
       }
       setResults(getSearchCards(data));
@@ -501,8 +501,8 @@ export default function Home() {
         <div className="container topline-inner">
           <span>India&apos;s design intelligence platform</span>
           <div className="topline-links">
-            <a href="mailto:contact@legalthread.com">Contact us</a>
-            <a href="#about">About us</a>
+            <a href="/contact-us">Contact us</a>
+            <a href="/about">About us</a>
           </div>
         </div>
       </div>
@@ -514,9 +514,9 @@ export default function Home() {
           </a>
           <nav className="main-nav" aria-label="Main navigation">
             <a className="nav-active" href="#registry">Registry</a>
-            <a href="#how-it-works">How it works</a>
-            <a href="#about">About us</a>
-            <a href="mailto:contact@legalthread.com">Contact us</a>
+            <a href="/how-it-works">How it works</a>
+            <a href="/about">About us</a>
+            <a href="/contact-us">Contact us</a>
           </nav>
           <div className="header-actions">
             <span className="secure-label"><Icon name="shield" size={16} /> Secure workspace</span>
@@ -536,9 +536,9 @@ export default function Home() {
         </div>
         <nav className={`mobile-nav ${mobileNavOpen ? "mobile-nav-open" : ""}`} aria-label="Mobile navigation">
           <a href="#registry" onClick={() => setMobileNavOpen(false)}>Registry</a>
-          <a href="#how-it-works" onClick={() => setMobileNavOpen(false)}>How it works</a>
-          <a href="#about" onClick={() => setMobileNavOpen(false)}>About us</a>
-          <a href="mailto:contact@legalthread.com" onClick={() => setMobileNavOpen(false)}>Contact us</a>
+          <a href="/how-it-works" onClick={() => setMobileNavOpen(false)}>How it works</a>
+          <a href="/about" onClick={() => setMobileNavOpen(false)}>About us</a>
+          <a href="/contact-us" onClick={() => setMobileNavOpen(false)}>Contact us</a>
           <button
             className={`role-button ${isAdmin ? "role-admin" : ""}`}
             onClick={() => { setIsAdmin((value) => !value); setMobileNavOpen(false); }}
@@ -757,11 +757,11 @@ export default function Home() {
         </section>
       </main>
 
-      <footer className="site-footer" id="about">
+      <footer className="site-footer">
         <div className="container footer-main">
           <a className="brand footer-brand" href="#" aria-label="Legal Thread home"><span className="brand-mark">LT</span><span className="brand-copy"><strong>LEGAL THREAD</strong><small>DESIGN REGISTRY</small></span></a>
           <p>Giving every good idea<br />the clarity it deserves.</p>
-          <div className="footer-links"><a href="mailto:contact@legalthread.com">Contact us</a><a href="#about">About us</a><a href="#registry">Design registry</a></div>
+          <div className="footer-links"><a href="/contact-us">Contact us</a><a href="/about">About us</a><a href="#registry">Design registry</a></div>
           <div className="footer-location">BUILT FOR INDIA<br /><span>DESIGN · INTELLIGENCE · PROTECTION</span></div>
         </div>
         <div className="container footer-bottom"><span>© {new Date().getFullYear()} Legal Thread Technologies Ltd. All rights reserved.</span><span>Thoughtful design deserves thoughtful protection.</span></div>
