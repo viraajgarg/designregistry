@@ -272,6 +272,9 @@ export default function Home() {
   const [searchError, setSearchError] = useState("");
   const [selectedDesign, setSelectedDesign] = useState<Design | null>(null);
   const [selectedImage, setSelectedImage] = useState<string | undefined>();
+  const [imageZoomed, setImageZoomed] = useState(false);
+  const [zoomPosition, setZoomPosition] = useState({ x: 50, y: 50 });
+  const [zoomLevel, setZoomLevel] = useState(1);
   const [detailLoading, setDetailLoading] = useState(false);
   const [detailError, setDetailError] = useState("");
   const [notice, setNotice] = useState("");
@@ -334,6 +337,9 @@ export default function Home() {
   async function openDesign(designNumId: string, image?: string) {
     setSelectedDesign(null);
     setSelectedImage(image);
+    setImageZoomed(false);
+    setZoomLevel(1);
+    setZoomPosition({ x: 50, y: 50 });
     setDetailError("");
     setDetailLoading(true);
     try {
@@ -769,38 +775,99 @@ export default function Home() {
 
       {(detailLoading || selectedDesign || detailError) && (
         <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) { setSelectedDesign(null); setDetailError(""); } }}>
-          <section className="detail-modal" role="dialog" aria-modal="true" aria-labelledby="detail-title">
+          <section
+            className="detail-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={selectedDesign ? `Design record details for ${selectedDesign.article_name || selectedDesign.design_num_id}` : "Design record details"}
+          >
             <button className="modal-close" type="button" aria-label="Close design details" onClick={() => { setSelectedDesign(null); setDetailError(""); }}><Icon name="close" size={20} /></button>
             {detailLoading ? <div className="modal-loading"><span className="loading-spinner" /><strong>Loading design details…</strong></div> : detailError && !selectedDesign ? <div className="modal-error"><h2>Could not load design</h2><p>{detailError}</p><button className="button-secondary" type="button" onClick={() => { setSelectedDesign(null); setDetailError(""); }}>Close</button></div> : selectedDesign && (
               <>
                 <div className="detail-topline"><span className="mini-kicker">DESIGN REGISTRY · RECORD DETAIL</span><span className={`status-pill ${designIsActive(selectedDesign.active) ? "" : "status-inactive"}`}><i />{designIsActive(selectedDesign.active) ? "Active record" : "Inactive"}</span></div>
                 <div className="detail-layout">
-                  <div className="detail-photo">
-                    {modalImage ? <img src={modalImage} alt={selectedDesign.article_name || "Registered design"} /> : <div className="result-image-placeholder"><Icon name="image" size={34} /></div>}
-                    <span>DESIGN NO. {selectedDesign.design_num_id}</span>
+                  <div
+                    className="detail-photo"
+                    onPointerEnter={(event) => {
+                      if (event.pointerType === "mouse" && modalImage) setImageZoomed(true);
+                    }}
+                    onPointerLeave={() => setImageZoomed(false)}
+                  >
+                    {modalImage ? (
+                      <img
+                        src={modalImage}
+                        alt={selectedDesign.article_name || "Registered design"}
+                        onPointerMove={(event) => {
+                          if (event.pointerType !== "mouse") return;
+                          const bounds = event.currentTarget.getBoundingClientRect();
+                          setZoomPosition({
+                            x: Math.min(100, Math.max(0, ((event.clientX - bounds.left) / bounds.width) * 100)),
+                            y: Math.min(100, Math.max(0, ((event.clientY - bounds.top) / bounds.height) * 100)),
+                          });
+                        }}
+                      />
+                    ) : <div className="result-image-placeholder"><Icon name="image" size={34} /></div>}
+                    <div className="detail-photo-footer">
+                      <span>DESIGN NO. {selectedDesign.design_num_id}</span>
+                      {modalImage && (
+                        <label className="zoom-control">
+                          <span>{zoomLevel.toFixed(1)}×</span>
+                          <input
+                            type="range"
+                            aria-label="Image zoom level"
+                            min="1"
+                            max="5"
+                            step="0.1"
+                            value={zoomLevel}
+                            onChange={(event) => setZoomLevel(Number(event.target.value))}
+                            onFocus={() => setImageZoomed(true)}
+                            onBlur={() => setImageZoomed(false)}
+                          />
+                        </label>
+                      )}
+                    </div>
+                    {modalImage && <small className="zoom-hint">HOVER TO PREVIEW</small>}
                   </div>
                   <div className="detail-content">
-                    <h2 id="detail-title">{selectedDesign.article_name || "Registered design"}</h2>
-                    <p className="detail-class">Class {selectedDesign.class || "—"} <span>·</span> Design no. {selectedDesign.design_num_id}</p>
-                    <div className="detail-fields">
-                      <div><span>Filing date</span><strong>{formatDate(selectedDesign.filing_date)}</strong></div>
-                      <div><span>Journal number</span><strong>{selectedDesign.journal_num || "—"}</strong></div>
-                      <div><span>Journal date</span><strong>{formatDate(selectedDesign.journal_date)}</strong></div>
+                    <div className={`detail-information ${imageZoomed && modalImage ? "detail-information-hidden" : ""}`} aria-hidden={imageZoomed && Boolean(modalImage)}>
+                      <>
+                        <h2>{selectedDesign.article_name || "Registered design"}</h2>
+                        <p className="detail-class">Class {selectedDesign.class || "—"} <span>·</span> Design no. {selectedDesign.design_num_id}</p>
+                        <div className="detail-fields">
+                          <div><span>Filing date</span><strong>{formatDate(selectedDesign.filing_date)}</strong></div>
+                          <div><span>Journal number</span><strong>{selectedDesign.journal_num || "—"}</strong></div>
+                          <div><span>Journal date</span><strong>{formatDate(selectedDesign.journal_date)}</strong></div>
+                        </div>
+                        <div className="detail-table-section">
+                          <h3>Applicant details</h3>
+                          <div className="detail-table-wrap"><table><thead><tr><th>Applicant name</th><th>Applicant address</th></tr></thead><tbody>
+                            {(selectedDesign.applicants ?? []).length ? selectedDesign.applicants!.map((applicant, index) => <tr key={`detail-applicant-${index}`}><td>{applicant.applicant_name}</td><td>{applicant.applicant_address}</td></tr>) : <tr><td colSpan={2}>No applicant details available.</td></tr>}
+                          </tbody></table></div>
+                        </div>
+                        <div className="detail-table-section">
+                          <h3>Priorities</h3>
+                          <div className="detail-table-wrap"><table><thead><tr><th>Application number</th><th>Country</th><th>Filing date</th></tr></thead><tbody>
+                            {(selectedDesign.priorities ?? []).length ? selectedDesign.priorities!.map((priority, index) => <tr key={`detail-priority-${index}`}><td>{priority.application_number}</td><td>{priority.country_name}</td><td>{formatDate(priority.date_of_filing_conversion_country)}</td></tr>) : <tr><td colSpan={3}>No priority details available.</td></tr>}
+                          </tbody></table></div>
+                        </div>
+                        {detailError && <p className="error-message" role="alert">{detailError}</p>}
+                        <div className="modal-actions">{isAdmin && designIsActive(selectedDesign.active) && <button className="button-danger" type="button" onClick={deactivateDesign}>Disable design</button>}<button className="button-secondary" type="button" onClick={() => { setSelectedDesign(null); setDetailError(""); }}>Close details</button></div>
+                      </>
                     </div>
-                    <div className="detail-table-section">
-                      <h3>Applicant details</h3>
-                      <div className="detail-table-wrap"><table><thead><tr><th>Applicant name</th><th>Applicant address</th></tr></thead><tbody>
-                        {(selectedDesign.applicants ?? []).length ? selectedDesign.applicants!.map((applicant, index) => <tr key={`detail-applicant-${index}`}><td>{applicant.applicant_name}</td><td>{applicant.applicant_address}</td></tr>) : <tr><td colSpan={2}>No applicant details available.</td></tr>}
-                      </tbody></table></div>
-                    </div>
-                    <div className="detail-table-section">
-                      <h3>Priorities</h3>
-                      <div className="detail-table-wrap"><table><thead><tr><th>Application number</th><th>Country</th><th>Filing date</th></tr></thead><tbody>
-                        {(selectedDesign.priorities ?? []).length ? selectedDesign.priorities!.map((priority, index) => <tr key={`detail-priority-${index}`}><td>{priority.application_number}</td><td>{priority.country_name}</td><td>{formatDate(priority.date_of_filing_conversion_country)}</td></tr>) : <tr><td colSpan={3}>No priority details available.</td></tr>}
-                      </tbody></table></div>
-                    </div>
-                    {detailError && <p className="error-message" role="alert">{detailError}</p>}
-                    <div className="modal-actions">{isAdmin && designIsActive(selectedDesign.active) && <button className="button-danger" type="button" onClick={deactivateDesign}>Disable design</button>}<button className="button-secondary" type="button" onClick={() => { setSelectedDesign(null); setDetailError(""); }}>Close details</button></div>
+                    {imageZoomed && modalImage && (
+                      <div
+                        className="detail-zoom"
+                        role="img"
+                        aria-label={`${zoomLevel.toFixed(1)} times magnified view of ${selectedDesign.article_name || "registered design"}`}
+                        style={{
+                          backgroundImage: `url(${JSON.stringify(modalImage)})`,
+                          backgroundPosition: `${zoomPosition.x}% ${zoomPosition.y}%`,
+                          backgroundSize: `${zoomLevel * 100}% ${zoomLevel * 100}%`,
+                        }}
+                      >
+                        <span>{zoomLevel.toFixed(1)}× MAGNIFIED VIEW · MOVE POINTER TO PAN</span>
+                      </div>
+                    )}
                   </div>
                 </div>
               </>
