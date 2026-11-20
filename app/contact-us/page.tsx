@@ -25,7 +25,7 @@ export default function ContactPage() {
       <header className="site-header about-header contact-header">
         <div className="container about-header-inner">
           <a className="brand" href="/" aria-label="Legal Thread home">
-            <span className="brand-mark">LT</span>
+            <img className="brand-mark" src="/icon.png" alt="" />
             <span className="brand-copy">
               <strong>LEGAL THREAD</strong>
               <small>DESIGN REGISTRY</small>
@@ -110,7 +110,7 @@ export default function ContactPage() {
       <footer className="site-footer">
         <div className="container footer-main">
           <a className="brand footer-brand" href="/" aria-label="Legal Thread home">
-            <span className="brand-mark">LT</span>
+            <img className="brand-mark" src="/icon.png" alt="" />
             <span className="brand-copy">
               <strong>LEGAL THREAD</strong>
               <small>DESIGN REGISTRY</small>

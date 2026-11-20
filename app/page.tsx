@@ -62,14 +62,17 @@ type ClientResultFilters = {
   applicantNameContains: string;
 };
 type CriteriaSearchRequest = {
-  filing_date_before?: string;
+  filing_date_from?: string;
+  filing_date_till?: string;
   journal_number_contains?: string;
-  journal_date_before?: string;
+  journal_date_from?: string;
+  journal_date_till?: string;
   applicant_names?: string[];
   design_number_contains?: string;
   priority_application_number_contains?: string;
   priority_country_contains?: string;
-  priority_filing_date_before?: string;
+  priority_date_from?: string;
+  priority_date_till?: string;
 };
 type PaginatedDesignResponse = {
   items: Design[];
@@ -321,14 +324,17 @@ export default function Home() {
   const [mode, setMode] = useState<SearchMode>("image");
   const [query, setQuery] = useState("");
   const [searchImage, setSearchImage] = useState<File | null>(null);
-  const [filingDateBefore, setFilingDateBefore] = useState("");
+  const [filingDateFrom, setFilingDateFrom] = useState("");
+  const [filingDateTill, setFilingDateTill] = useState("");
   const [journalNumberContains, setJournalNumberContains] = useState("");
-  const [journalDateBefore, setJournalDateBefore] = useState("");
+  const [journalDateFrom, setJournalDateFrom] = useState("");
+  const [journalDateTill, setJournalDateTill] = useState("");
   const [applicantNames, setApplicantNames] = useState([""]);
   const [designNumberContains, setDesignNumberContains] = useState("");
   const [priorityApplicationNumberContains, setPriorityApplicationNumberContains] = useState("");
   const [priorityCountryContains, setPriorityCountryContains] = useState("");
-  const [priorityFilingDateBefore, setPriorityFilingDateBefore] = useState("");
+  const [priorityFilingDateFrom, setPriorityFilingDateFrom] = useState("");
+  const [priorityFilingDateTill, setPriorityFilingDateTill] = useState("");
   const [clientResultFilters, setClientResultFilters] = useState<ClientResultFilters>(emptyClientResultFilters);
   const [draftClientResultFilters, setDraftClientResultFilters] = useState<ClientResultFilters>(emptyClientResultFilters);
   const [clientFilterOpen, setClientFilterOpen] = useState(false);
@@ -428,17 +434,25 @@ export default function Home() {
       throw new Error("Enter a name in every Applicant Name field, or remove the empty field.");
     }
     const today = localDateString(new Date());
-    if (
-      [filingDateBefore, journalDateBefore, priorityFilingDateBefore].some(
-        (date) => date && date >= today,
-      )
-    ) {
-      throw new Error("All dates must be earlier than today.");
+    const dateRanges = [
+      { from: filingDateFrom, till: filingDateTill, label: "Filing date" },
+      { from: journalDateFrom, till: journalDateTill, label: "Journal date" },
+      { from: priorityFilingDateFrom, till: priorityFilingDateTill, label: "Priority filing date" },
+    ];
+    for (const { from, till, label } of dateRanges) {
+      if ((from && from >= today) || (till && till >= today)) {
+        throw new Error(`${label} dates must be earlier than today.`);
+      }
+      if (from && till && from > till) {
+        throw new Error(`${label} From must be on or before ${label} Till.`);
+      }
     }
     const criteria: CriteriaSearchRequest = {};
-    if (filingDateBefore) criteria.filing_date_before = filingDateBefore;
+    if (filingDateFrom) criteria.filing_date_from = filingDateFrom;
+    if (filingDateTill) criteria.filing_date_till = filingDateTill;
     if (journalNumberContains.trim()) criteria.journal_number_contains = journalNumberContains.trim();
-    if (journalDateBefore) criteria.journal_date_before = journalDateBefore;
+    if (journalDateFrom) criteria.journal_date_from = journalDateFrom;
+    if (journalDateTill) criteria.journal_date_till = journalDateTill;
     const enteredApplicantNames = applicantValues.filter(Boolean);
     if (enteredApplicantNames.length) criteria.applicant_names = enteredApplicantNames;
     if (designNumberContains.trim()) criteria.design_number_contains = designNumberContains.trim();
@@ -448,7 +462,8 @@ export default function Home() {
     if (priorityCountryContains.trim()) {
       criteria.priority_country_contains = priorityCountryContains.trim();
     }
-    if (priorityFilingDateBefore) criteria.priority_filing_date_before = priorityFilingDateBefore;
+    if (priorityFilingDateFrom) criteria.priority_date_from = priorityFilingDateFrom;
+    if (priorityFilingDateTill) criteria.priority_date_till = priorityFilingDateTill;
     return criteria;
   }
 
@@ -766,7 +781,7 @@ export default function Home() {
       <header className="site-header">
         <div className="container header-inner">
           <a className="brand" href="#" aria-label="Legal Thread home">
-            <span className="brand-mark">LT</span>
+            <img className="brand-mark" src="/icon.png" alt="" />
             <span className="brand-copy"><strong>LEGAL THREAD</strong><small>DESIGN REGISTRY</small></span>
           </a>
           <nav className="main-nav" aria-label="Main navigation">
@@ -843,16 +858,32 @@ export default function Home() {
                     <p className="criteria-hint">A design can match any one of the criteria you enter. Leave unused fields blank.</p>
                     <div className="criteria-grid">
                       <label className="field-label">
-                        FILING DATE
-                        <input type="date" max={latestPastDate()} value={filingDateBefore} onChange={(event) => setFilingDateBefore(event.target.value)} />
+                        FILING DATE FROM
+                        <input type="date" max={latestPastDate()} value={filingDateFrom} onChange={(event) => setFilingDateFrom(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        FILING DATE TILL
+                        <input type="date" max={latestPastDate()} value={filingDateTill} onChange={(event) => setFilingDateTill(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        JOURNAL DATE FROM
+                        <input type="date" max={latestPastDate()} value={journalDateFrom} onChange={(event) => setJournalDateFrom(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        JOURNAL DATE TILL
+                        <input type="date" max={latestPastDate()} value={journalDateTill} onChange={(event) => setJournalDateTill(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        PRIORITY FILING DATE FROM
+                        <input type="date" max={latestPastDate()} value={priorityFilingDateFrom} onChange={(event) => setPriorityFilingDateFrom(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        PRIORITY FILING TILL
+                        <input type="date" max={latestPastDate()} value={priorityFilingDateTill} onChange={(event) => setPriorityFilingDateTill(event.target.value)} />
                       </label>
                       <label className="field-label">
                         JOURNAL NUMBER
                         <input type="text" maxLength={100} placeholder="Whole or partial number" value={journalNumberContains} onChange={(event) => setJournalNumberContains(event.target.value)} />
-                      </label>
-                      <label className="field-label">
-                        JOURNAL DATE
-                        <input type="date" max={latestPastDate()} value={journalDateBefore} onChange={(event) => setJournalDateBefore(event.target.value)} />
                       </label>
                       <label className="field-label">
                         DESIGN NUMBER
@@ -906,10 +937,6 @@ export default function Home() {
                       <label className="field-label">
                         PRIORITY COUNTRY
                         <input type="text" maxLength={100} placeholder="Country name" value={priorityCountryContains} onChange={(event) => setPriorityCountryContains(event.target.value)} />
-                      </label>
-                      <label className="field-label">
-                        PRIORITY FILING DATE
-                        <input type="date" max={latestPastDate()} value={priorityFilingDateBefore} onChange={(event) => setPriorityFilingDateBefore(event.target.value)} />
                       </label>
                     </div>
                   </>
@@ -1234,21 +1261,12 @@ export default function Home() {
           </section>
         )}
 
-        <section className="process-section" id="how-it-works">
-          <div className="container process-inner">
-            <div><span className="mini-kicker">A CLEARER WAY TO DISCOVER</span><h2>From first thought<br /><em>to found.</em></h2></div>
-            <div className="process-steps">
-              <div className="process-step"><span>01</span><strong>Search your way</strong><p>Upload an image, describe your idea, or search by registry terms.</p></div>
-              <div className="process-step"><span>02</span><strong>Explore matches</strong><p>See relevant designs with clear visual previews and match scores.</p></div>
-              <div className="process-step"><span>03</span><strong>Know the details</strong><p>Open any record for applicants, filing information and priorities.</p></div>
-            </div>
-          </div>
-        </section>
+        
       </main>
 
       <footer className="site-footer">
         <div className="container footer-main">
-          <a className="brand footer-brand" href="#" aria-label="Legal Thread home"><span className="brand-mark">LT</span><span className="brand-copy"><strong>LEGAL THREAD</strong><small>DESIGN REGISTRY</small></span></a>
+          <a className="brand footer-brand" href="#" aria-label="Legal Thread home"><img className="brand-mark" src="/icon.png" alt="" /><span className="brand-copy"><strong>LEGAL THREAD</strong><small>DESIGN REGISTRY</small></span></a>
           <p>Giving every good idea<br />the clarity it deserves.</p>
           <div className="footer-links"><a href="/contact-us">Contact us</a><a href="/about">About us</a><a href="#registry">Design registry</a></div>
           <div className="footer-location">BUILT FOR INDIA<br /><span>DESIGN · INTELLIGENCE · PROTECTION</span></div>

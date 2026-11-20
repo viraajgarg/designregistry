@@ -109,7 +109,7 @@ export default function HowItWorksPage() {
       <header className="site-header about-header how-header">
         <div className="container about-header-inner">
           <a className="brand" href="/" aria-label="Legal Thread home">
-            <span className="brand-mark">LT</span>
+            <img className="brand-mark" src="/icon.png" alt="" />
             <span className="brand-copy">
               <strong>LEGAL THREAD</strong>
               <small>DESIGN REGISTRY</small>
@@ -160,7 +160,7 @@ export default function HowItWorksPage() {
               </div>
               <div className="how-art-card how-art-card-front">
                 <span>WORKFLOW 01—04</span>
-                <div className="how-art-mark">LT</div>
+                <img className="how-art-mark" src="/icon.png" alt="" />
                 <b>Research.<br />Review.<br />Decide.</b>
                 <small>AI ASSISTED · HUMAN REVIEW</small>
               </div>
@@ -279,7 +279,7 @@ export default function HowItWorksPage() {
       <footer className="site-footer">
         <div className="container footer-main">
           <a className="brand footer-brand" href="/" aria-label="Legal Thread home">
-            <span className="brand-mark">LT</span>
+            <img className="brand-mark" src="/icon.png" alt="" />
             <span className="brand-copy">
               <strong>LEGAL THREAD</strong>
               <small>DESIGN REGISTRY</small>

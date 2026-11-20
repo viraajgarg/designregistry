@@ -64,7 +64,7 @@ export default function AboutPage() {
       <header className="site-header about-header">
         <div className="container about-header-inner">
           <a className="brand" href="/" aria-label="Legal Thread home">
-            <span className="brand-mark">LT</span>
+            <img className="brand-mark" src="/icon.png" alt="" />
             <span className="brand-copy">
               <strong>LEGAL THREAD</strong>
               <small>DESIGN REGISTRY</small>
@@ -115,7 +115,7 @@ export default function AboutPage() {
               </div>
               <div className="about-doc about-doc-front">
                 <span>IDEA → INSIGHT</span>
-                <div className="about-doc-mark">LT</div>
+                <img className="about-doc-mark" src="/icon.png" alt="" />
                 <b>Patent &amp;<br />legal intelligence</b>
                 <small>RESEARCH · ANALYSIS · DISCOVERY</small>
               </div>
@@ -256,7 +256,7 @@ export default function AboutPage() {
       <footer className="site-footer">
         <div className="container footer-main">
           <a className="brand footer-brand" href="/" aria-label="Legal Thread home">
-            <span className="brand-mark">LT</span>
+            <img className="brand-mark" src="/icon.png" alt="" />
             <span className="brand-copy">
               <strong>LEGAL THREAD</strong>
               <small>DESIGN REGISTRY</small>
