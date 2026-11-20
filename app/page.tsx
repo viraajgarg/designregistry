@@ -48,14 +48,42 @@ type SearchCard = {
   designClass: string;
   score?: number;
   imageUrl?: string;
+  journalNumber?: string | null;
+  journalDate?: string | null;
+  applicantNames?: string[];
+  priorityFilingDates?: string[];
 };
-type SearchMode = "image" | "semantic" | "text";
+type SearchMode = "image" | "semantic" | "text" | "criteria";
+type ClientResultFilters = {
+  journalNumberContains: string;
+  journalDateAfter: string;
+  designNumberContains: string;
+  priorityFilingDateEquals: string;
+  applicantNameContains: string;
+};
+type CriteriaSearchRequest = {
+  filing_date_before?: string;
+  journal_number_contains?: string;
+  journal_date_before?: string;
+  applicant_names?: string[];
+  design_number_contains?: string;
+  priority_application_number_contains?: string;
+  priority_country_contains?: string;
+  priority_filing_date_before?: string;
+};
+type PaginatedDesignResponse = {
+  items: Design[];
+  page: number;
+  page_size: number;
+  total: number;
+};
 type ApplicantDraft = Applicant;
 type PriorityDraft = Priority;
 
 const imageBaseUrl =
   process.env.NEXT_PUBLIC_IMAGE_BASE_URL ?? "http://localhost/images/";
 const maxImageBytes = 15 * 1024 * 1024;
+const searchPageSize = 90;
 const emptyApplicant = (): ApplicantDraft => ({
   applicant_name: "",
   applicant_address: "",
@@ -65,12 +93,19 @@ const emptyPriority = (): PriorityDraft => ({
   country_name: "",
   date_of_filing_conversion_country: "",
 });
+const emptyClientResultFilters = (): ClientResultFilters => ({
+  journalNumberContains: "",
+  journalDateAfter: "",
+  designNumberContains: "",
+  priorityFilingDateEquals: "",
+  applicantNameContains: "",
+});
 
 function Icon({
   name,
   size = 20,
 }: {
-  name: "search" | "upload" | "arrow" | "close" | "menu" | "plus" | "shield" | "image" | "spark";
+  name: "search" | "upload" | "arrow" | "close" | "menu" | "plus" | "shield" | "image" | "spark" | "filter";
   size?: number;
 }) {
   const common = {
@@ -94,6 +129,7 @@ function Icon({
     shield: <><path d="M12 22s8-4 8-11V5l-8-3-8 3v6c0 7 8 11 8 11Z" /><path d="m9 12 2 2 4-4" /></>,
     image: <><rect x="3" y="3" width="18" height="18" rx="2" /><circle cx="8.5" cy="8.5" r="1.5" /><path d="m21 15-5-5L5 21" /></>,
     spark: <><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z" /><path d="m19 14 .9 2.1L22 17l-2.1.9L19 20l-.9-2.1L16 17l2.1-.9L19 14Z" /></>,
+    filter: <><path d="M4 5h16l-6.5 7.5v5L10.5 19v-6.5L4 5Z" /></>,
   };
   return <svg {...common}>{paths[name]}</svg>;
 }
@@ -131,6 +167,19 @@ function formatDate(value?: string | null) {
         month: "short",
         year: "numeric",
       }).format(date);
+}
+
+function localDateString(date: Date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function latestPastDate() {
+  const date = new Date();
+  date.setDate(date.getDate() - 1);
+  return localDateString(date);
 }
 
 function errorMessage(error: unknown) {
@@ -203,6 +252,12 @@ function getSearchCards(data: unknown): SearchCard[] {
         encoded ??
         imageUrl(detailImage) ??
         imageUrl(designNumId),
+      journalNumber: item.journal_num,
+      journalDate: item.journal_date,
+      applicantNames: item.applicants?.map((applicant) => applicant.applicant_name),
+      priorityFilingDates: item.priorities?.map(
+        (priority) => priority.date_of_filing_conversion_country,
+      ),
     };
   });
 }
@@ -266,6 +321,24 @@ export default function Home() {
   const [mode, setMode] = useState<SearchMode>("image");
   const [query, setQuery] = useState("");
   const [searchImage, setSearchImage] = useState<File | null>(null);
+  const [filingDateBefore, setFilingDateBefore] = useState("");
+  const [journalNumberContains, setJournalNumberContains] = useState("");
+  const [journalDateBefore, setJournalDateBefore] = useState("");
+  const [applicantNames, setApplicantNames] = useState([""]);
+  const [designNumberContains, setDesignNumberContains] = useState("");
+  const [priorityApplicationNumberContains, setPriorityApplicationNumberContains] = useState("");
+  const [priorityCountryContains, setPriorityCountryContains] = useState("");
+  const [priorityFilingDateBefore, setPriorityFilingDateBefore] = useState("");
+  const [clientResultFilters, setClientResultFilters] = useState<ClientResultFilters>(emptyClientResultFilters);
+  const [draftClientResultFilters, setDraftClientResultFilters] = useState<ClientResultFilters>(emptyClientResultFilters);
+  const [clientFilterOpen, setClientFilterOpen] = useState(false);
+  const [submittedCriteria, setSubmittedCriteria] = useState<CriteriaSearchRequest | null>(null);
+  const [submittedTextQuery, setSubmittedTextQuery] = useState<string | null>(null);
+  const [resultsPagination, setResultsPagination] = useState({
+    page: 1,
+    pageSize: searchPageSize,
+    total: 0,
+  });
   const [results, setResults] = useState<SearchCard[]>([]);
   const [hasSearched, setHasSearched] = useState(false);
   const [searching, setSearching] = useState(false);
@@ -294,11 +367,181 @@ export default function Home() {
   const modeDescription = useMemo(() => {
     if (mode === "image") return "Find visually similar designs by uploading a reference image.";
     if (mode === "semantic") return "Describe the design in plain English to find related registrations.";
+    if (mode === "criteria") return "Match records against any of the criteria below.";
     return "Search registry records by design number, article name or keyword.";
   }, [mode]);
 
+  const filteredResults = useMemo(() => {
+    const canFilterSubmittedResults =
+      (mode === "criteria" && submittedCriteria !== null) ||
+      (mode === "text" && submittedTextQuery !== null);
+    if (!canFilterSubmittedResults) return results;
+
+    const journalNumber = clientResultFilters.journalNumberContains.trim().toLowerCase();
+    const journalDateAfter = clientResultFilters.journalDateAfter;
+    const designNumber = clientResultFilters.designNumberContains.trim().toLowerCase();
+    const priorityFilingDate = clientResultFilters.priorityFilingDateEquals;
+    const applicantName = clientResultFilters.applicantNameContains.trim().toLowerCase();
+
+    return results.filter((result) => {
+      if (journalNumber && !(result.journalNumber ?? "").toLowerCase().includes(journalNumber)) {
+        return false;
+      }
+      if (
+        journalDateAfter &&
+        (!result.journalDate || result.journalDate.slice(0, 10) <= journalDateAfter)
+      ) {
+        return false;
+      }
+      if (designNumber && !result.designNumId.toLowerCase().includes(designNumber)) {
+        return false;
+      }
+      if (
+        priorityFilingDate &&
+        !(result.priorityFilingDates ?? []).some((date) => date.slice(0, 10) === priorityFilingDate)
+      ) {
+        return false;
+      }
+      if (
+        applicantName &&
+        !(result.applicantNames ?? []).some((name) => name.toLowerCase().includes(applicantName))
+      ) {
+        return false;
+      }
+      return true;
+    });
+  }, [clientResultFilters, mode, results, submittedCriteria, submittedTextQuery]);
+  const hasClientResultFilters = Object.values(clientResultFilters).some((value) => value.trim());
+  const canOpenResultFilters =
+    !searching &&
+    !searchError &&
+    ((mode === "criteria" && submittedCriteria !== null) ||
+      (mode === "text" && submittedTextQuery !== null));
+  const hasPagedResults =
+    ((mode === "criteria" && submittedCriteria !== null) ||
+      (mode === "text" && submittedTextQuery !== null)) &&
+    resultsPagination.total > resultsPagination.pageSize;
+
+  function buildCriteriaRequest(): CriteriaSearchRequest {
+    const applicantValues = applicantNames.map((name) => name.trim());
+    if (applicantNames.length > 1 && applicantValues.some((name) => !name)) {
+      throw new Error("Enter a name in every Applicant Name field, or remove the empty field.");
+    }
+    const today = localDateString(new Date());
+    if (
+      [filingDateBefore, journalDateBefore, priorityFilingDateBefore].some(
+        (date) => date && date >= today,
+      )
+    ) {
+      throw new Error("All dates must be earlier than today.");
+    }
+    const criteria: CriteriaSearchRequest = {};
+    if (filingDateBefore) criteria.filing_date_before = filingDateBefore;
+    if (journalNumberContains.trim()) criteria.journal_number_contains = journalNumberContains.trim();
+    if (journalDateBefore) criteria.journal_date_before = journalDateBefore;
+    const enteredApplicantNames = applicantValues.filter(Boolean);
+    if (enteredApplicantNames.length) criteria.applicant_names = enteredApplicantNames;
+    if (designNumberContains.trim()) criteria.design_number_contains = designNumberContains.trim();
+    if (priorityApplicationNumberContains.trim()) {
+      criteria.priority_application_number_contains = priorityApplicationNumberContains.trim();
+    }
+    if (priorityCountryContains.trim()) {
+      criteria.priority_country_contains = priorityCountryContains.trim();
+    }
+    if (priorityFilingDateBefore) criteria.priority_filing_date_before = priorityFilingDateBefore;
+    return criteria;
+  }
+
+  async function fetchCriteriaPage(
+    criteria: CriteriaSearchRequest,
+    page: number,
+    pageSize: number,
+  ) {
+    setSearching(true);
+    setSearchError("");
+    try {
+      const data = await apiRequest<PaginatedDesignResponse>(
+        `/search/criteria?page=${page}&page_size=${pageSize}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(criteria),
+        },
+      );
+      setResults(getSearchCards(data));
+      setResultsPagination({
+        page: data.page,
+        pageSize: data.page_size,
+        total: data.total,
+      });
+    } catch (error) {
+      setSearchError(errorMessage(error));
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  async function changeCriteriaPage(page: number) {
+    if (!submittedCriteria) return;
+    await fetchCriteriaPage(submittedCriteria, page, resultsPagination.pageSize);
+  }
+
+  async function fetchTextSearchPage(query: string, page: number, pageSize: number) {
+    return apiRequest<PaginatedDesignResponse>(
+      `/designs/search?q=${encodeURIComponent(query)}&page=${page}&page_size=${pageSize}`,
+    );
+  }
+
+  async function changeTextSearchPage(page: number) {
+    if (submittedTextQuery === null) return;
+    setSearching(true);
+    setSearchError("");
+    try {
+      const data = await fetchTextSearchPage(
+        submittedTextQuery,
+        page,
+        resultsPagination.pageSize,
+      );
+      setResults(getSearchCards(data));
+      setResultsPagination({
+        page: data.page,
+        pageSize: data.page_size,
+        total: data.total,
+      });
+    } catch (error) {
+      setSearchError(errorMessage(error));
+    } finally {
+      setSearching(false);
+    }
+  }
+
   async function submitSearch(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (mode === "criteria") {
+      setSearchError("");
+      let criteria: CriteriaSearchRequest;
+      try {
+        criteria = buildCriteriaRequest();
+      } catch (error) {
+        setSearchError(errorMessage(error));
+        return;
+      }
+      setSubmittedCriteria(criteria);
+      setSubmittedTextQuery(null);
+      setResultsPagination({ page: 1, pageSize: searchPageSize, total: 0 });
+      setClientResultFilters(emptyClientResultFilters());
+      setDraftClientResultFilters(emptyClientResultFilters());
+      setClientFilterOpen(false);
+      setResults([]);
+      setHasSearched(true);
+      await fetchCriteriaPage(criteria, 1, searchPageSize);
+      return;
+    }
+    setSubmittedCriteria(null);
+    setSubmittedTextQuery(null);
+    setClientResultFilters(emptyClientResultFilters());
+    setDraftClientResultFilters(emptyClientResultFilters());
+    setClientFilterOpen(false);
     setSearching(true);
     setSearchError("");
     setResults([]);
@@ -309,22 +552,30 @@ export default function Home() {
         if (!searchImage) throw new Error("Choose an image before searching.");
         const formData = new FormData();
         formData.append("image", searchImage);
-        data = await apiRequest<SearchHit[]>("/search/image?limit=100", {
+        data = await apiRequest<SearchHit[]>("/search/image?limit=1000", {
           method: "POST",
           body: formData,
         });
       } else if (mode === "semantic") {
         if (!query.trim()) throw new Error("Enter a description to search.");
-        data = await apiRequest<SearchHit[]>("/search/text?limit=100", {
+        data = await apiRequest<SearchHit[]>("/search/text?limit=1000", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ query: query.trim() }),
         });
       } else {
-        if (!query.trim()) throw new Error("Enter a design number or keyword.");
-        data = await apiRequest<{ items: Design[] }>(
-          `/designs/search?q=${encodeURIComponent(query.trim())}&page=1&page_size=100`,
-        );
+        const searchQuery = query.trim();
+        if (!searchQuery) throw new Error("Enter a design number or keyword.");
+        setSubmittedTextQuery(searchQuery);
+        setResultsPagination({ page: 1, pageSize: searchPageSize, total: 0 });
+        const pageData = await fetchTextSearchPage(searchQuery, 1, searchPageSize);
+        setResults(getSearchCards(pageData));
+        setResultsPagination({
+          page: pageData.page,
+          pageSize: pageData.page_size,
+          total: pageData.total,
+        });
+        return;
       }
       setResults(getSearchCards(data));
     } catch (error) {
@@ -505,7 +756,7 @@ export default function Home() {
     <div className="site-shell">
       <div className="topline">
         <div className="container topline-inner">
-          <span>India&apos;s design intelligence platform</span>
+          <span>India&apos;s Design Intelligence Platform</span>
           <div className="topline-links">
             <a href="/contact-us">Contact us</a>
             <a href="/about">About us</a>
@@ -556,50 +807,19 @@ export default function Home() {
       </header>
 
       <main>
-        <section className="hero">
-          <div className="container hero-inner">
-            <div className="hero-copy">
-              <div className="eyebrow"><span className="eyebrow-line" /> DESIGN INTELLIGENCE, REIMAGINED</div>
-              <h1>Find the design<br /><em>behind the idea.</em></h1>
-              <p>Search India&apos;s design registry with the precision your work deserves. Discover, compare and protect what&apos;s next.</p>
-              <div className="hero-proof">
-                <span><i className="proof-dot" /> Visual &amp; semantic search</span>
-                <span><i className="proof-dot" /> Registry-ready records</span>
-              </div>
-            </div>
-            <div className="hero-art" aria-hidden="true">
-              <div className="orbit orbit-one" /><div className="orbit orbit-two" />
-              <div className="art-card art-back"><span>FORM 01</span><div className="bottle bottle-back" /></div>
-              <div className="art-card art-front"><span>DESIGN STUDY · 2024</span><div className="bottle"><i /></div><div className="art-caption">Form follows<br />feeling.</div></div>
-              <div className="art-stamp">DESIGN<br />FOUND</div>
-              <div className="art-index">01 — 03</div>
-            </div>
-            <div className="hero-bottom">
-              <span>SEARCH WITH CONFIDENCE</span>
-              <span>DESIGN REGISTRY <b>·</b> INDIA</span>
-            </div>
-          </div>
-        </section>
-
         <section className="workspace-section" id="registry">
           <div className="container workspace">
-            <aside className="workspace-intro">
-              <div className="section-index">01 <span> / SEARCH</span></div>
-              <h2>Your next<br />great find<br /><em>starts here.</em></h2>
-              <p>Choose a search method and let the registry do the looking.</p>
-              <div className="aside-note"><span className="note-line" /><span>MADE FOR<br />DESIGN PROFESSIONALS</span></div>
-            </aside>
-
             <div className="search-panel">
               <div className="panel-heading">
-                <div><span className="mini-kicker">DESIGN REGISTRY</span><h2>Search designs</h2></div>
+                <div><span className="mini-kicker">MODERN DESIGN REGISTRY</span><h2>Search designs</h2></div>
                 <span className="record-count"><i /> Live registry</span>
               </div>
               <div className="search-tabs" role="tablist" aria-label="Search type">
                 {([
-                  ["image", "Image search", "Visual match"],
-                  ["semantic", "Describe it", "Semantic"],
+                  ["image", "Image search", "Intelligent Visual match"],
+                  ["semantic", "Describe it - Meaningful", "Semantic Intelligence"],
                   ["text", "Free text", "Registry terms"],
+                  ["criteria", "Criteria search", "Match any field - Your Criteria"],
                 ] as const).map(([key, title, subtitle]) => (
                   <button
                     key={key}
@@ -618,6 +838,81 @@ export default function Home() {
                 <p className="form-description">{modeDescription}</p>
                 {mode === "image" ? (
                   <UploadPreview file={searchImage} onChange={setSearchImage} onFileError={setSearchError} title="Drop a reference image or browse" />
+                ) : mode === "criteria" ? (
+                  <>
+                    <p className="criteria-hint">A design can match any one of the criteria you enter. Leave unused fields blank.</p>
+                    <div className="criteria-grid">
+                      <label className="field-label">
+                        FILING DATE
+                        <input type="date" max={latestPastDate()} value={filingDateBefore} onChange={(event) => setFilingDateBefore(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        JOURNAL NUMBER
+                        <input type="text" maxLength={100} placeholder="Whole or partial number" value={journalNumberContains} onChange={(event) => setJournalNumberContains(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        JOURNAL DATE
+                        <input type="date" max={latestPastDate()} value={journalDateBefore} onChange={(event) => setJournalDateBefore(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        DESIGN NUMBER
+                        <input type="text" maxLength={100} placeholder="Whole or partial number" value={designNumberContains} onChange={(event) => setDesignNumberContains(event.target.value)} />
+                      </label>
+                      <div className="criteria-applicants">
+                        <span className="criteria-label">APPLICANT NAME</span>
+                        {applicantNames.map((name, index) => (
+                          <div className="criteria-applicant-row" key={`criteria-applicant-${index}`}>
+                            <input
+                              aria-label={`Applicant name ${index + 1}`}
+                              type="text"
+                              maxLength={255}
+                              placeholder="Applicant name"
+                              required={applicantNames.length > 1}
+                              value={name}
+                              onChange={(event) =>
+                                setApplicantNames((names) =>
+                                  names.map((value, nameIndex) => nameIndex === index ? event.target.value : value),
+                                )
+                              }
+                            />
+                            {index === 0 ? (
+                              <button
+                                className="criteria-add-button"
+                                type="button"
+                                aria-label="Add applicant name"
+                                title={applicantNames.length >= 50 ? "Maximum of 50 applicant names" : "Add applicant name"}
+                                disabled={applicantNames.length >= 50}
+                                onClick={() => setApplicantNames((names) => [...names, ""])}
+                              >
+                                <Icon name="plus" size={16} />
+                              </button>
+                            ) : (
+                              <button
+                                className="remove-button criteria-remove"
+                                type="button"
+                                aria-label={`Remove applicant name ${index + 1}`}
+                                onClick={() => setApplicantNames((names) => names.filter((_, nameIndex) => nameIndex !== index))}
+                              >
+                                <Icon name="close" size={15} />
+                              </button>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                      <label className="field-label">
+                        PRIORITY APPLICATION NUMBER
+                        <input type="text" maxLength={100} placeholder="Whole or partial number" value={priorityApplicationNumberContains} onChange={(event) => setPriorityApplicationNumberContains(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        PRIORITY COUNTRY
+                        <input type="text" maxLength={100} placeholder="Country name" value={priorityCountryContains} onChange={(event) => setPriorityCountryContains(event.target.value)} />
+                      </label>
+                      <label className="field-label">
+                        PRIORITY FILING DATE
+                        <input type="date" max={latestPastDate()} value={priorityFilingDateBefore} onChange={(event) => setPriorityFilingDateBefore(event.target.value)} />
+                      </label>
+                    </div>
+                  </>
                 ) : (
                   <label className="field-label">
                     {mode === "semantic" ? "DESCRIBE YOUR DESIGN" : "DESIGN NUMBER OR KEYWORD"}
@@ -653,12 +948,47 @@ export default function Home() {
               {hasSearched && (
                 <div className="results-section" aria-live="polite">
                   <div className="results-heading">
-                    <div><span className="mini-kicker">YOUR DISCOVERIES</span><h3>{searching ? "Searching the registry…" : `${results.length} ${results.length === 1 ? "design" : "designs"} found`}</h3></div>
-                    {results.length > 0 && <span className="results-sort">BEST MATCH</span>}
+                    <div>
+                      <span className="mini-kicker">YOUR DISCOVERIES</span>
+                      <h3>
+                        {searching
+                          ? "Searching the registry…"
+                          : mode === "criteria" && submittedCriteria
+                            ? hasClientResultFilters
+                              ? `${filteredResults.length} ${filteredResults.length === 1 ? "match" : "matches"} on this page`
+                              : `${resultsPagination.total} ${resultsPagination.total === 1 ? "design" : "designs"} found`
+                            : mode === "text" && submittedTextQuery !== null
+                              ? hasClientResultFilters
+                                ? `${filteredResults.length} ${filteredResults.length === 1 ? "match" : "matches"} on this page`
+                                : `${resultsPagination.total} ${resultsPagination.total === 1 ? "design" : "designs"} found`
+                              : `${results.length} ${results.length === 1 ? "design" : "designs"} found`}
+                      </h3>
+                    </div>
+                    <div className="results-heading-actions">
+                      {canOpenResultFilters && (
+                        <button
+                          className="client-filter-trigger"
+                          type="button"
+                          aria-label="Open result filters"
+                          title="Filter results"
+                          aria-haspopup="dialog"
+                          aria-expanded={clientFilterOpen}
+                          aria-controls="result-filter-dialog"
+                          onClick={() => {
+                            setDraftClientResultFilters({ ...clientResultFilters });
+                            setClientFilterOpen(true);
+                          }}
+                        >
+                          <Icon name="filter" size={18} />
+                          {hasClientResultFilters && <span className="client-filter-active-dot" aria-hidden="true" />}
+                        </button>
+                      )}
+                      {filteredResults.length > 0 && <span className="results-sort">BEST MATCH</span>}
+                    </div>
                   </div>
-                  {!searching && results.length > 0 && (
+                  {!searching && filteredResults.length > 0 && (
                     <div className="result-grid">
-                      {results.map((result, index) => (
+                      {filteredResults.map((result, index) => (
                         <button
                           className="result-card"
                           key={`${result.designNumId}-${index}`}
@@ -682,6 +1012,159 @@ export default function Home() {
                   {!searching && !searchError && results.length === 0 && (
                     <div className="empty-results"><span className="empty-mark">—</span><strong>No matching designs found</strong><span>Try a different image or refine your search terms.</span></div>
                   )}
+                  {!searching && !searchError && results.length > 0 && filteredResults.length === 0 && hasClientResultFilters && (
+                    <div className="empty-results">
+                      <span className="empty-mark">—</span>
+                      <strong>No designs match these filters</strong>
+                      <span>
+                        {hasPagedResults
+                          ? "Adjust a filter or use pagination to check another page."
+                          : "Adjust or clear a filter to see the loaded results."}
+                      </span>
+                    </div>
+                  )}
+                  {hasPagedResults && (
+                    <nav
+                      className="criteria-pagination"
+                      aria-label={mode === "criteria" ? "Criteria search result pages" : "Free Text search result pages"}
+                    >
+                      <span>
+                        Showing {(resultsPagination.page - 1) * resultsPagination.pageSize + 1}–{Math.min(resultsPagination.page * resultsPagination.pageSize, resultsPagination.total)} of {resultsPagination.total}
+                      </span>
+                      <div>
+                        <button
+                          className="button-secondary criteria-page-button"
+                          type="button"
+                          disabled={searching || resultsPagination.page <= 1}
+                          onClick={() =>
+                            mode === "criteria"
+                              ? changeCriteriaPage(resultsPagination.page - 1)
+                              : changeTextSearchPage(resultsPagination.page - 1)
+                          }
+                        >
+                          Previous
+                        </button>
+                        <span>Page {resultsPagination.page} of {Math.ceil(resultsPagination.total / resultsPagination.pageSize)}</span>
+                        <button
+                          className="button-secondary criteria-page-button"
+                          type="button"
+                          disabled={searching || resultsPagination.page * resultsPagination.pageSize >= resultsPagination.total}
+                          onClick={() =>
+                            mode === "criteria"
+                              ? changeCriteriaPage(resultsPagination.page + 1)
+                              : changeTextSearchPage(resultsPagination.page + 1)
+                          }
+                        >
+                          Next
+                        </button>
+                      </div>
+                    </nav>
+                  )}
+                </div>
+              )}
+              {clientFilterOpen && canOpenResultFilters && (
+                <div
+                  className="client-filter-backdrop"
+                  role="presentation"
+                  onMouseDown={(event) => {
+                    if (event.target === event.currentTarget) setClientFilterOpen(false);
+                  }}
+                >
+                  <section
+                    id="result-filter-dialog"
+                    className="client-filter-dialog"
+                    role="dialog"
+                    aria-modal="true"
+                    aria-labelledby="result-filter-title"
+                    tabIndex={-1}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") setClientFilterOpen(false);
+                    }}
+                  >
+                    <button
+                      className="modal-close"
+                      type="button"
+                      aria-label="Close result filters"
+                      onClick={() => setClientFilterOpen(false)}
+                    >
+                      <Icon name="close" size={20} />
+                    </button>
+                    <div className="client-filter-dialog-header">
+                      <span className="mini-kicker">CLIENT-SIDE FILTERS</span>
+                      <h2 id="result-filter-title">Filter loaded results</h2>
+                      <p>All entered filters must match. These filters apply to this page only.</p>
+                    </div>
+                    <form
+                      onSubmit={(event) => {
+                        event.preventDefault();
+                        setClientResultFilters({ ...draftClientResultFilters });
+                        setClientFilterOpen(false);
+                      }}
+                    >
+                      <div className="client-filter-grid">
+                        <label className="field-label">
+                          JOURNAL NUMBER CONTAINS
+                          <input
+                            type="search"
+                            autoFocus
+                            value={draftClientResultFilters.journalNumberContains}
+                            onChange={(event) => setDraftClientResultFilters((filters) => ({ ...filters, journalNumberContains: event.target.value }))}
+                          />
+                        </label>
+                        <label className="field-label">
+                          JOURNAL DATE AFTER
+                          <input
+                            type="date"
+                            value={draftClientResultFilters.journalDateAfter}
+                            onChange={(event) => setDraftClientResultFilters((filters) => ({ ...filters, journalDateAfter: event.target.value }))}
+                          />
+                        </label>
+                        <label className="field-label">
+                          DESIGN NUMBER CONTAINS
+                          <input
+                            type="search"
+                            value={draftClientResultFilters.designNumberContains}
+                            onChange={(event) => setDraftClientResultFilters((filters) => ({ ...filters, designNumberContains: event.target.value }))}
+                          />
+                        </label>
+                        <label className="field-label">
+                          PRIORITY FILING DATE EQUALS
+                          <input
+                            type="date"
+                            value={draftClientResultFilters.priorityFilingDateEquals}
+                            onChange={(event) => setDraftClientResultFilters((filters) => ({ ...filters, priorityFilingDateEquals: event.target.value }))}
+                          />
+                        </label>
+                        <label className="field-label">
+                          APPLICANT NAME CONTAINS
+                          <input
+                            type="search"
+                            value={draftClientResultFilters.applicantNameContains}
+                            onChange={(event) => setDraftClientResultFilters((filters) => ({ ...filters, applicantNameContains: event.target.value }))}
+                          />
+                        </label>
+                      </div>
+                      <div className="client-filter-actions">
+                        <button
+                          className="text-button"
+                          type="button"
+                          onClick={() => setDraftClientResultFilters(emptyClientResultFilters())}
+                        >
+                          Clear all
+                        </button>
+                        <div>
+                          <button
+                            className="button-secondary"
+                            type="button"
+                            onClick={() => setClientFilterOpen(false)}
+                          >
+                            Cancel
+                          </button>
+                          <button className="button-primary" type="submit">Apply filters</button>
+                        </div>
+                      </div>
+                    </form>
+                  </section>
                 </div>
               )}
             </div>
